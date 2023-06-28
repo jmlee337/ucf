@@ -3,8 +3,6 @@
 #include "melee/characters/zelda.h"
 #include "ucf/pad_buffer.h"
 #include "util/melee/pad.h"
-#include <bit>
-#include <cmath>
 
 SHARED_DATA shared_pad_buffer data;
 
@@ -35,19 +33,28 @@ static bool check_sdrop_up(const auto &buffer, const PlayerInput &input)
 	return input.stick_y_hold_time < 2 && check_ucf_sdrop(buffer);
 }
 
-[[gnu::noinline]] static void apply_cardinals(const vec2c &raw_stick, vec2 *stick)
+
+// Produce 1.0 cardinals when one axis is >= 0.9875 and
+// the other is within [-SNAP_RANGE, SNAP_RANGE]
+[[gnu::noinline]] static void apply_cardinals(vec2 *stick)
 {
-	// Produce 1.0 cardinals when one axis is >= 80 and
-	// the other is within [-SNAP_RANGE, SNAP_RANGE]
-	constexpr auto SNAP_RANGE = 6;
+	// We want to use bitwise operations for simplicity/code size, and there's
+	// complications to using floats, so we'll treat them as signed integers.
+	// Importantly, lt/gt operations will still be correct.
+	s32 SNAP_RANGE = 0x3D99999A; // 0.075f (6 coords)
+	s32 THRESHOLD = 0x3F7CCCCD; // 0.9875f
+	s32 SNAP_VALUE = 0x3F800000; // 1.0f
+	vec2i *stick_s32 = (vec2i *)stick;
+	const s32 x = stick_s32->x;
+	const s32 y = stick_s32->y;
 
-	const auto raw_x = raw_stick.x;
-	const auto raw_y = raw_stick.y;
-
-	if ((raw_x <= -80 || raw_x >= 80) && raw_y >= -SNAP_RANGE && raw_y <= SNAP_RANGE)
-		*(vec2i*)stick = {std::bit_cast<int>(1.f) ^ (std::signbit(raw_stick.x) << 31), 0};
-	else if ((raw_y <= -80 || raw_y >= 80) && raw_x >= -SNAP_RANGE && raw_x <= SNAP_RANGE)
-		*(vec2i*)stick = {0, std::bit_cast<int>(1.f) ^ (std::signbit(raw_stick.y) << 31)};
+	// Mask out the sign bit to take the absolute value
+	if ((x & 0x7FFFFFFF) >= THRESHOLD && (y & 0x7FFFFFFF) <= SNAP_RANGE) {
+		// Use the original sign bit to assign ±1.0f appropriately
+		*stick_s32 = {(x & 0x80000000) | SNAP_VALUE, 0};
+	} else if ((y & 0x7FFFFFFF) >= THRESHOLD && (x & 0x7FFFFFFF) <= SNAP_RANGE) {
+		*stick_s32 = {0, (y & 0x80000000) | SNAP_VALUE};
+	}
 }
 
 static bool should_apply_cardinals(const Player *player)
@@ -71,8 +78,8 @@ static void gecko_entry()
 		buffer->entries[buffer->index].stick = status.stick;
 
 		if (should_apply_cardinals(player)) {
-			apply_cardinals(status.stick, &player->input.stick);
-			apply_cardinals(status.cstick, &player->input.cstick);
+			apply_cardinals(&player->input.stick);
+			apply_cardinals(&player->input.cstick);
 		}
 
 		if (check_sdrop_up(*buffer, player->input))
