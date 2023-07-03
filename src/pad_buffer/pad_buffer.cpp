@@ -34,10 +34,13 @@ static bool check_sdrop_up(const auto &buffer, const PlayerInput &input)
 }
 
 
-// Produce 1.0 cardinals when one axis is >= 0.9875 and
-// the other is within [-SNAP_RANGE, SNAP_RANGE]
-[[gnu::noinline]] static void apply_cardinals(vec2 *stick)
+// Produce 1.0 cardinals when one axis is >= 0.9875 and the other is within
+// [-SNAP_RANGE, SNAP_RANGE] and the raw major axis value is >= 80
+[[gnu::noinline]] static void apply_cardinals(const vec2c &raw_stick, vec2 *stick)
 {
+	const s8 raw_x = raw_stick.x;
+	const s8 raw_y = raw_stick.y;
+
 	// We want to use bitwise operations for simplicity/code size, and there's
 	// complications to using floats, so we'll treat them as signed integers.
 	// Importantly, lt/gt operations will still be correct.
@@ -49,10 +52,10 @@ static bool check_sdrop_up(const auto &buffer, const PlayerInput &input)
 	const s32 y = stick_s32->y;
 
 	// Mask out the sign bit to take the absolute value
-	if ((x & 0x7FFFFFFF) >= THRESHOLD && (y & 0x7FFFFFFF) <= SNAP_RANGE) {
+	if ((x & 0x7FFFFFFF) >= THRESHOLD && (y & 0x7FFFFFFF) <= SNAP_RANGE && (raw_x & 0x7F) >= 80) {
 		// Use the original sign bit to assign ±1.0f appropriately
 		*stick_s32 = {(x & 0x80000000) | SNAP_VALUE, 0};
-	} else if ((y & 0x7FFFFFFF) >= THRESHOLD && (x & 0x7FFFFFFF) <= SNAP_RANGE) {
+	} else if ((y & 0x7FFFFFFF) >= THRESHOLD && (x & 0x7FFFFFFF) <= SNAP_RANGE && (raw_y & 0x7F) >= 80) {
 		*stick_s32 = {0, (y & 0x80000000) | SNAP_VALUE};
 	}
 }
@@ -78,8 +81,8 @@ static void gecko_entry()
 		buffer->entries[buffer->index].stick = status.stick;
 
 		if (should_apply_cardinals(player)) {
-			apply_cardinals(&player->input.stick);
-			apply_cardinals(&player->input.cstick);
+			apply_cardinals(status.stick, &player->input.stick);
+			apply_cardinals(status.cstick, &player->input.cstick);
 		}
 
 		if (check_sdrop_up(*buffer, player->input))
