@@ -3,6 +3,8 @@
 #include "melee/characters/zelda.h"
 #include "ucf/pad_buffer.h"
 #include "util/melee/pad.h"
+#include <bit>
+#include <cmath>
 
 SHARED_DATA shared_pad_buffer data;
 
@@ -44,18 +46,18 @@ static bool check_sdrop_up(const auto &buffer, const PlayerInput &input)
 	// We want to use bitwise operations for simplicity/code size, and there's
 	// complications to using floats, so we'll treat them as signed integers.
 	// Importantly, lt/gt operations will still be correct.
-	s32 SNAP_RANGE = 0x3D99999A; // 0.075f (6 coords)
-	s32 THRESHOLD = 0x3F7CCCCD; // 0.9875f
-	s32 SNAP_VALUE = 0x3F800000; // 1.0f
+	const s32 SNAP_RANGE = std::bit_cast<s32>(0.075f); // (6 coords)
+	const s32 THRESHOLD = std::bit_cast<s32>(0.9875f);
+	const s32 SNAP_VALUE = std::bit_cast<s32>(1.0f);
 	vec2i *stick_s32 = (vec2i *)stick;
 	const s32 x = stick_s32->x;
 	const s32 y = stick_s32->y;
 
 	// Mask out the sign bit to take the absolute value
-	if ((x & 0x7FFFFFFF) >= THRESHOLD && (y & 0x7FFFFFFF) <= SNAP_RANGE && (raw_x & 0x7F) >= 80) {
+	if ((x & 0x7FFFFFFF) >= THRESHOLD && (y & 0x7FFFFFFF) <= SNAP_RANGE && std::abs(raw_x) >= 80) {
 		// Use the original sign bit to assign ±1.0f appropriately
 		*stick_s32 = {(x & 0x80000000) | SNAP_VALUE, 0};
-	} else if ((y & 0x7FFFFFFF) >= THRESHOLD && (x & 0x7FFFFFFF) <= SNAP_RANGE && (raw_y & 0x7F) >= 80) {
+	} else if ((y & 0x7FFFFFFF) >= THRESHOLD && (x & 0x7FFFFFFF) <= SNAP_RANGE && std::abs(raw_y) >= 80) {
 		*stick_s32 = {0, (y & 0x80000000) | SNAP_VALUE};
 	}
 }
